@@ -1,0 +1,16 @@
+{
+  "name": "pie-playground",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/d3": "^7.4.3",
+    "@types/p5": "^1.7.7"
+  }
+}
