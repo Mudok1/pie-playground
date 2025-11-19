@@ -7,6 +7,19 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+*.log
+*.sqlite3
+
+.vscode/
+.idea/
 
 .DS_Store
 .AppleDouble
