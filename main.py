@@ -10,6 +10,7 @@ from src.utils.colors import generate_beautiful_color
 from src.utils.passenger_display import print_passenger_details
 from src.interface.inspection_ui import InspectionUI
 from arcade.types import LBWH
+from src.base_sets.set_calculator import get_titanic_sets
 
 DESIGN_HEIGHT = 720 
 SCREEN_WIDTH = 1280
@@ -84,16 +85,15 @@ class PiePlayground(arcade.Window):
             new_cell = Cell(
                 wx + offset_x, 
                 wy + offset_y, 
-                75, 
-                set_data['color'], 
+                75,  # Ignored, calculated dynamically
+                generate_beautiful_color(), 
                 set_data['name'], 
                 set_data['count'],
                 set_data.get('data', set())
             )
             self.cells.append(new_cell)
-            print(f"Celula creada: {set_data['name']}")
+            #print(f"Celula creada: {set_data['name']}")
             
-            # Use utility function for printing
             print_passenger_details(
                 set_data.get('data', set()),
                 self.passenger_lookup,
@@ -103,7 +103,7 @@ class PiePlayground(arcade.Window):
 
         def _op_change_callback(new_op):
             self.current_operation = new_op
-            print(f"Operación cambiada a: {new_op}")
+            #print(f"Operación cambiada a: {new_op}")
 
 
         self.top_bar = TopBar(self, on_set_click_callback=_create_cell_callback, on_op_change_callback=_op_change_callback)
@@ -115,15 +115,19 @@ class PiePlayground(arcade.Window):
         arcade.set_background_color(self.bg_color)
 
     def setup(self):
-        self.cells.append(Cell(200, 300, 80, (255, 100, 100), "Mujeres", 240))
-        self.cells.append(Cell(400, 300, 90, (100, 100, 255), "1ra Clase", 120))
-        self.base_sets['Set Prueba 1'] = {'count': 100, 'color': (255, 0, 0), 'name': "Set Prueba 1"}
-        self.base_sets['Set Prueba 2'] = {'count': 200, 'color': (0, 0, 255), 'name': "Set Prueba 2"}
-        
         # Merge Titanic sets
         titanic_sets, passenger_lookup = get_titanic_sets()
         self.base_sets.update(titanic_sets)
         self.passenger_lookup = passenger_lookup
+        
+        # Initial Cells with Real Data
+        mujeres_data = self.base_sets.get('Mujeres')
+        if mujeres_data:
+            self.cells.append(Cell(200, 300, 80, generate_beautiful_color(), "Mujeres", mujeres_data['count'], data=mujeres_data['data']))
+            
+        clase1_data = self.base_sets.get('1ra Clase')
+        if clase1_data:
+            self.cells.append(Cell(400, 300, 90, generate_beautiful_color(), "1ra Clase", clase1_data['count'], data=clase1_data['data']))
         
         self.top_bar.setup_set_buttons(self.base_sets)
         self.camera.viewport = LBWH(left=0, bottom=0, width=self.width, height=self.height)
@@ -133,9 +137,15 @@ class PiePlayground(arcade.Window):
         self.clear() 
         
         with self.camera.activate():
-            self.lines_drawn_last_frame = draw_grid(self.camera, self.width, self.height, self.pixel_ratio)
-            self.draw_link()
-            for cell in self.cells: cell.draw()
+            # Focus Mode: Only draw world elements if NOT inspecting
+            if not self.is_inspecting:
+                self.lines_drawn_last_frame = draw_grid(self.camera, self.width, self.height, self.pixel_ratio)
+                self.draw_link()
+                for cell in self.cells: cell.draw()
+            else:
+                # If inspecting, only draw the inspected cell
+                if self.inspected_cell:
+                    self.inspected_cell.draw()
 
         #UI
         self.default_camera.use()
@@ -264,10 +274,10 @@ class PiePlayground(arcade.Window):
         
         if self.is_panning and not self.dragging_cell:
             scale = 1 / self.camera.zoom
+            pan_speed = 0.9
             cx, cy = self.camera.position
-            new_pos = (cx - dx * scale, cy - dy * scale)
+            new_pos = (cx - dx * scale * pan_speed, cy - dy * scale * pan_speed)
             self.camera.position = new_pos
-            # Update target so it doesn't snap back
             self.camera_target_pos = new_pos
 
     def on_mouse_release(self, x: int, y: int, button: int, modifiers: int):
@@ -285,6 +295,15 @@ class PiePlayground(arcade.Window):
         # Actualizar posición por si acaso
         self.mouse_x = x
         self.mouse_y = y
+
+        # If inspecting, check if UI handles scroll (e.g. passenger list)
+        if self.is_inspecting:
+            if self.inspection_ui.on_mouse_scroll(x, y, scroll_x, scroll_y):
+                return True
+            
+            # If not handled by UI, scroll exits inspection mode
+            self.exit_inspection_mode()
+            return False
 
         zoom_factor = 1.1
         if scroll_y > 0: new_zoom = self.camera.zoom * zoom_factor
@@ -351,7 +370,6 @@ class PiePlayground(arcade.Window):
                     if width > 1:
                         arcade.draw_line(cell_a.x, cell_a.y, cell_b.x, cell_b.y, color, width)
 
-
     def update_collisions_and_merge(self):
         """ 
         Detecta colisiones y fusiona. 
@@ -403,13 +421,38 @@ class PiePlayground(arcade.Window):
                         
                     new_count = len(new_data)
                     
+                    # Verificar si la operación es redundante
+                    is_redundant = (
+                        (new_count == cell_a.count and new_data == cell_a.data) or
+                        (new_count == cell_b.count and new_data == cell_b.data)
+                    )
+                    
+                    if is_redundant:
+                        #print("Operación redundante: Absorción")
+                        # Aplicar rebote fuerte para feedback visual
+                        bounce_force = 15.0
+                        dx = cell_b.x - cell_a.x
+                        dy = cell_b.y - cell_a.y
+                        dist_bounce = math.sqrt(dx*dx + dy*dy)
+                        if dist_bounce > 0:
+                            cell_a.physics_vel_x -= (dx / dist_bounce) * bounce_force
+                            cell_a.physics_vel_y -= (dy / dist_bounce) * bounce_force
+                            cell_b.physics_vel_x += (dx / dist_bounce) * bounce_force
+                            cell_b.physics_vel_y += (dy / dist_bounce) * bounce_force
+                        # Marcar como procesados para no volver a intentar
+                        processed_indices.add(i)
+                        processed_indices.add(j)
+                        break  # No crear célula
+                    
                     # Crear hija
-                    child_cell = Cell(mid_x, mid_y, 70, new_color, "Mix", new_count, new_data)
-                    child_cell.name = "Set" # Nombre corto visual
+                    child_cell = Cell(
+                        mid_x, mid_y, 70, new_color, new_name, new_count, new_data,
+                        parents=[cell_a, cell_b],
+                        operation=self.current_operation
+                    )
                     
-                    print(f"Operación {op_symbol} realizada.")
+                    #print(f"Operación {op_symbol} realizada.")
                     
-                    # Use utility function for printing
                     print_passenger_details(
                         new_data,
                         self.passenger_lookup,
@@ -441,36 +484,31 @@ class PiePlayground(arcade.Window):
             self.cells.append(c)
     
     def enter_inspection_mode(self, cell):
-        """Enter inspection mode for a specific cell"""
-        print(f"Entering inspection mode for: {cell.name}")
+        #print(f"Entering inspection mode for: {cell.name}")
         self.is_inspecting = True
         self.inspected_cell = cell
         
         # Save current camera state
         self.camera_original_pos = self.camera.position
         self.camera_original_zoom = self.camera.zoom
-        
-        # Calculate target camera position (upper-left quadrant)
-        # Cell should be centered at (width * 0.25, height * 0.75)
+  
         target_screen_x = self.width * 0.25
         target_screen_y = self.height * 0.75
         
-        # Camera position is the center of the viewport
-        # We want the cell's world position to appear at target screen position
+   
         self.camera_target_pos = (
             cell.x - (target_screen_x - self.width / 2) / 2.0,
             cell.y - (target_screen_y - self.height / 2) / 2.0
         )
         self.camera_target_zoom = 2.0
         
-        # Enable dark mode vignette
+    
         self.vignette.set_dark_mode(True)
         
-        # Disable top bar, enable inspection UI
+    
         self.inspection_ui.enable()
     
     def exit_inspection_mode(self):
-        """Exit inspection mode and return to normal view"""
         if not self.is_inspecting:
             return
         

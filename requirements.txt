@@ -1,3 +1,24 @@
-arcade
-pandas
-perlin-noise
+# PIE Playground - Requirements
+# Python 3.10+
+
+# Core dependencies
+arcade==3.3.3
+pandas==2.3.3
+perlin-noise==1.14
+
+# Arcade dependencies (installed automatically)
+attrs==25.4.0
+cffi==2.0.0
+numpy==2.3.5
+pillow==11.3.0
+pycparser==2.23
+pyglet==2.1.11
+pymunk==6.9.0
+pytiled-parser==2.2.9
+typing-extensions==4.15.0
+
+# Pandas dependencies (installed automatically)
+python-dateutil==2.9.0.post0
+pytz==2025.2
+six==1.17.0
+tzdata==2025.2

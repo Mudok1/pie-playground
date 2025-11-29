@@ -3,15 +3,28 @@ import math
 import random
 
 class Cell:
-    def __init__(self, x, y, radius, col, name, count, data=None):
+    def __init__(self, x, y, radius, col, name, count, data=None, **kwargs):
         self.x = x
         self.y = y
-        self.radius = radius
-        self.target_radius = radius
+        
+        # Calcular tamaño basado en count con mínimo de 60
+        min_radius = 60
+        max_radius = 150
+        # Escala logarítmica para mejor distribución visual
+        if count > 0:
+            scale = math.log(count + 1) / math.log(1000)  # Normalizado para counts hasta ~1000
+            calculated_radius = min_radius + (max_radius - min_radius) * scale
+            self.radius = max(min_radius, min(calculated_radius, max_radius))
+        else:
+            self.radius = min_radius
+            
+        self.target_radius = self.radius
         self.color = col
         self.name = name
         self.count = count
         self.data = data if data is not None else set()
+        self.parents = kwargs.get('parents', [])
+        self.operation = kwargs.get('operation', None)
 
         #animacion
         self.current_radius = 0.1 
@@ -31,19 +44,36 @@ class Cell:
         self.stretch_vel_y = 0.0
         self.physics_vel_x = 0.0
         self.physics_vel_y = 0.0
+        self.drag_vel_x = 0.0
+        self.drag_vel_y = 0.0
         self.time = 0.0
 
         self.excitation_level = 0.0 # 0.0 a 1.0
 
-        font_size = int(self.target_radius * 0.25)
+        # Tamaño de fuente proporcional al radio
+        font_size = int(self.target_radius * 0.22)
         if font_size < 10: font_size = 10
         
-        self.text_object = arcade.Text(
-            text=f"{self.name}\n{self.count}",
+        # Crear dos objetos de texto separados para mejor separación visual
+        self.name_text = arcade.Text(
+            text=self.name,
             x=self.x,
-            y=self.y,
+            y=self.y + font_size * 0.6,  # Arriba
             color=arcade.color.BLACK,
             font_size=font_size,
+            font_name=("calibri", "arial"),
+            anchor_x="center",
+            anchor_y="center",
+            align="center",
+            bold=True
+        )
+        
+        self.count_text = arcade.Text(
+            text=str(self.count),
+            x=self.x,
+            y=self.y - font_size * 0.6,  # Abajo
+            color=arcade.color.BLACK,
+            font_size=int(font_size * 0.9),  # Ligeramente más pequeño
             font_name=("calibri", "arial"),
             anchor_x="center",
             anchor_y="center",
@@ -91,7 +121,8 @@ class Cell:
             arcade.draw_polygon_filled(inner_vertices, self.color)
 
         if self.current_radius > self.target_radius * 0.5:
-            self.text_object.draw()
+            self.name_text.draw()
+            self.count_text.draw()
 
     def update(self, world_mouse_x, world_mouse_y):
 
@@ -111,15 +142,22 @@ class Cell:
         if self.is_dragging:
             self.x = world_mouse_x - self.offset_x
             self.y = world_mouse_y - self.offset_y
+            
+            # Calculate drag velocity for inertia
+            self.drag_vel_x = self.x - self.prev_x
+            self.drag_vel_y = self.y - self.prev_y
         else:
             self.x += self.physics_vel_x
             self.y += self.physics_vel_y
-            self.physics_vel_x *= 0.92
-            self.physics_vel_y *= 0.92
+            self.physics_vel_x *= 0.90 # Increased friction (was 0.92)
+            self.physics_vel_y *= 0.90
 
-        # Actualizar posición del texto
-        self.text_object.x = self.x
-        self.text_object.y = self.y
+        # Actualizar posición de ambos textos
+        font_size = self.name_text.font_size
+        self.name_text.x = self.x
+        self.name_text.y = self.y + font_size * 0.6
+        self.count_text.x = self.x
+        self.count_text.y = self.y - font_size * 0.6
 
         instant_vel_x = self.x - self.prev_x
         instant_vel_y = self.y - self.prev_y
@@ -139,8 +177,44 @@ class Cell:
         self.offset_y = world_mouse_y - self.y
         self.physics_vel_x = 0
         self.physics_vel_y = 0
+        self.drag_vel_x = 0
+        self.drag_vel_y = 0
 
     def stop_drag(self):
         self.is_dragging = False
-        self.physics_vel_x = self.stretch_vel_x
-        self.physics_vel_y = self.stretch_vel_y
+        # Apply inertia (dampened)
+        self.physics_vel_x = self.drag_vel_x * 0.5
+        self.physics_vel_y = self.drag_vel_y * 0.5
+
+    def get_base_ancestors(self):
+        if not self.parents:
+            return {self}
+        
+        ancestors = set()
+        for parent in self.parents:
+            ancestors.update(parent.get_base_ancestors())
+        return ancestors
+    
+    def get_formula_string(self):
+        """Genera la fórmula recursiva completa de esta célula."""
+        if not self.parents:
+            return self.name  # Caso base
+        
+        # Mapeo de operaciones a símbolos
+        OP_MAP = {
+            0: "∩",  # OP_INTERSECT
+            1: "∪",  # OP_UNION
+            2: "-",  # OP_DIFFERENCE
+            "INTERSECT": "∩",
+            "UNION": "∪",
+            "DIFFERENCE": "-",
+            "intersect": "∩",
+            "union": "∪",
+            "difference": "-",
+        }
+        
+        p1_formula = self.parents[0].get_formula_string()
+        p2_formula = self.parents[1].get_formula_string() if len(self.parents) > 1 else "?"
+        symbol = OP_MAP.get(self.operation, str(self.operation))
+        
+        return f"({p1_formula} {symbol} {p2_formula})"
