@@ -422,10 +422,19 @@ class PiePlayground(arcade.Window):
                     new_count = len(new_data)
                     
                     # Verificar si la operación es redundante
-                    is_redundant = (
-                        (new_count == cell_a.count and new_data == cell_a.data) or
-                        (new_count == cell_b.count and new_data == cell_b.data)
-                    )
+                    # Solo bloqueamos casos verdaderamente inútiles:
+                    # 1. Operar un conjunto consigo mismo (A∪A, A∩A, A-A)
+                    # 2. Resultados vacíos en uniones/intersecciones
+                    # Permitimos (A∪B)∩C = C cuando C⊆(A∪B) porque es educativo
+                    
+                    is_same_sets = (cell_a.data == cell_b.data)
+                    is_empty_result = (new_count == 0)
+                    
+                    is_redundant = False
+                    if is_same_sets:
+                        is_redundant = True
+                    elif is_empty_result and self.current_operation != OP_DIFFERENCE:
+                        is_redundant = True
                     
                     if is_redundant:
                         #print("Operación redundante: Absorción")
