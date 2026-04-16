@@ -119,4 +119,3 @@ Si prefieres ejecutar el código fuente o modificarlo:
 * Juan David Miguez Alba
 * Francisco Arturo Miranda Cure
 ---
-*Desarrollado para la clase de Matemáticas Discretas I.*
